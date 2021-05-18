@@ -1,0 +1,214 @@
+---
+title: "Practical Machine Learning"
+author: "Ruben_Mkrtchyan"
+date: "18/05/2021"
+output: html_document
+---
+
+# Practical Machine Learning 
+# Peer-Graded Assignment
+# Ruben Mkrtchyan
+
+## I.Overview
+
+This report is the final assignment for Coursera's Practical Machine Learning course. This course is a part of the Data Science Specialization track which is organized by John Hopkins University. This report will be graded by peers of the same course. 
+
+The report will use data from accelerometers on forearm, arm, belt and dumbel of six participants. The data consists of a training data and a test data, which is for validating the selected model.The goal of the report is to predict the way that the participants performed the excercise. That is the "classe" variable in the training set. There will be three models trained in this report, those are:Decision Tree, Random Forest and Gradient Boosted Trees. The best model will be sellected based on the accuracy rate and out of sample error rate. By the use of the selected model, the twenty test cases available in the test data will be predicted. 
+
+## II.Backgroung
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+## III.Data Loading, preprocessing and cleaning
+
+### a)Data Preprocessing and package instalation:
+At first, we need to upload the necessary libraries.
+```{r}
+#install.packages('caret', dependencies = TRUE)
+#install.packages('gtable', dependencies = TRUE)
+#install.packages('ggplot2', dependencies = TRUE)
+#install.packages('gower', dependencies = TRUE)
+```
+
+```{r}
+#install.packages('jquerylib', dependencies = TRUE)
+```
+```{r}
+library(caret)
+library(lattice)
+library(ggplot2)
+library(corrplot)
+library(knitr)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+set.seed(404) #Setting the seed
+```
+
+### b)Data Reading:
+Now we read the data.
+```{r}
+Url_train <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+Url_test  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train_data <- read.csv(url(Url_train))
+test_data  <- read.csv(url(Url_test))
+
+inTrain  <- createDataPartition(train_data$classe, p=0.7, list=FALSE)
+Train_Set <- train_data[inTrain, ]
+Test_Set  <- train_data[-inTrain, ]
+```
+Let's check the number of variables of Train_Set and Test_Set.
+```{r}
+dim(Train_Set)
+```
+```{r}
+dim(Test_Set)
+```
+As we see, we have got 160 initial variables, however after data cleaning the number will be reduced. 
+
+### c)Data Cleaning:
+We need to remove the near zero variance (NZV) variables.
+```{r}
+NZV <- nearZeroVar(Train_Set)
+Train_Set <- Train_Set[, -NZV]
+Test_Set  <- Test_Set[, -NZV]
+```
+```{r}
+dim(Train_Set)
+```
+```{r}
+dim(Test_Set)
+```
+As we see, the number of variables are reduced to 105 for both Test_Set and Train_Set. 
+
+Now, we need to clean the variables with mostly NA values. 
+```{r}
+NA_val    <- sapply(Train_Set, function(x) mean(is.na(x))) > 0.8
+Train_Set <- Train_Set[, NA_val==FALSE]
+Test_Set  <- Test_Set[, NA_val==FALSE]
+```
+
+```{r}
+dim(Train_Set)
+```
+```{r}
+dim(Test_Set)
+```
+Let's check the remaining variables in the reduced sets. 
+```{r}
+head(Test_Set)
+```
+As we see, the first five variables are just identification variables, so we need to clean those too. 
+```{r}
+Train_Set <- Train_Set[, -(1:5)]
+Test_Set  <- Test_Set[, -(1:5)]
+```
+
+```{r}
+dim(Train_Set)
+```
+```{r}
+dim(Test_Set)
+```
+So, after removing mostly NA variables, NZV variables and the first five identification variables we are left to 54 final variables. 
+
+### d)Correlation Analysis
+
+```{r}
+corelation_matrix <- cor(Train_Set[, -54])
+corrplot(corelation_matrix, order = "FPC", method = "color", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+
+Here, in the correlation matrix, the red and blue colors are associated with -1 and 1 correlation respectively. The bright colors show small amount of correlations between the remaining 54 variables. 
+
+## IV.Buliding and Testing the Models
+
+### a)Model 1:Decision Tree
+
+#### i) The Model
+
+The first model that we will use is Decision Trees. At first we need to get the model, then we use fancyRpartPlot() function to plot the classification tree.
+```{r}
+control_var <- trainControl(method="cv", number=3, verboseIter=F)
+DT_Model <- train(classe~., data=Test_Set, method="rpart", trControl = control_var, tuneLength = 3)
+fancyRpartPlot(DT_Model$finalModel)
+```
+#### ii) The prediction
+
+Now that we already have the model, we need to validate it on Train_Set.
+```{r}
+TS_Factored <- factor(Train_Set$classe)
+DT_Prediction <- predict(DT_Model, Train_Set)
+cmtree <- confusionMatrix(DT_Prediction, TS_Factored)
+cmtree
+```
+As we see, the accuracy rate is 0.4773 and the out of sample error rate is 1-accuracy = 0.5227
+
+### b)Model 2:Random Forest
+
+#### i) The Model
+
+Our second model is Random Forest. 
+```{r}
+control_RF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+RF_Model <- train(classe ~ ., data=Train_Set, method="rf", trControl=control_RF)
+RF_Model$finalModel
+```
+
+#### ii) The prediction
+
+```{r}
+#RF <- train(classe~., data=Train_Set, method="rf", trControl = control_var)
+RF_Prediction <- predict(RF_Model, Train_Set)
+cmrf <- confusionMatrix(RF_Prediction, TS_Factored)
+cmrf
+```
+
+The validation test shows that the accuracy rate is 1 and therefore the out of sample error rate will be 0 or something very close to it. Maybe the accuracy is 1 because of overfiting. 
+
+### b)Model 3:Generalized Boosted Model (GBM)
+
+#### i) The Model
+
+We already have a model which has an accuracy rate of 1, however we still perform the training of the third model which is GBM, Generalized Boosted Model. 
+```{r}
+control_GBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+GBM_Model  <- train(classe ~ ., data=Train_Set, method = "gbm", trControl = control_GBM)
+GBM_Model$finalModel
+```
+
+#### ii) The prediction
+
+```{r}
+GBM_Prediction <- predict(GBM_Model, newdata=Test_Set)
+```
+
+```{r}
+GBM_Conf_Matrix <- confusionMatrix(factor(GBM_Prediction), factor(Test_Set$classe))
+GBM_Conf_Matrix
+```
+
+And, as predicted, the accuracy rate of GBM is less than the same of Random Forest model. Here, the out of sample error rate is very little, 0.0084.
+
+### V. Best Model Selection and its Validation on test_data
+
+The three models used gave us the following accuracy rates:
+Decision Tree - 0.4773
+Random Forest - 1
+Generalized Boosted Model - 0.9891  
+
+So, we choose the model with highest accuracy rate which is Random Forest. And now we will validate and get results of the 20 observations of test_data via applying Random Forest Model.
+```{r}
+Predict_Results <- predict(RF_Model, test_data)
+Predict_Results
+```
+
